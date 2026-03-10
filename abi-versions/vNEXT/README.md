@@ -1138,6 +1138,38 @@ Plugin must return one of the following values:
 - `PAUSE` to pause processing.
 
 
+#### `proxy_on_upstream_select`
+
+* params:
+  - `i32 (uint32_t) stream_context_id`
+  - `i32 (`[`proxy_last_upstream_state`]`) last_state`
+* returns:
+  - none
+
+Called when the host is choosing an upstream for the HTTP request.
+
+During the callback `proxy_set_upstream` can be invoked to select an
+upstream. If no upstream is selected, the host will select an upstream.
+
+Can be called multiple times depending on whether the selected upstream
+could be reached, if it responded with a valid response and how many 
+attempts are allowed.
+
+Current state of processing and the expected action is represented using
+the `last_state` parameter:
+- `NO_INFO` - no upstream has been contacted yet, plugin can set a new upstream
+- `NEXT` - upstream responded with a valid response, but could not
+    provide the requested content, plugin can fetch information about the last
+    attempt and set a new upstream
+- `FAILED` - upstream could not be contacted or sent an invalid response,
+  plugin can fetch information about the last attempt and set a new upstream
+- `OK` - upstream sent a valid response, plugin can fetch information 
+about the last attempt
+
+Forwarding to another upstream can be aborted by calling `proxy_send_local_response` 
+unless `last_state` is `OK`, when response could already be sent downstream.
+
+
 ### Functions exposed by the host
 
 #### `proxy_send_local_response`
@@ -2076,6 +2108,14 @@ changes to unrelated connections/requests.
 - `HISTOGRAM` = `2`
 
 
+#### `proxy_last_upstream_state_t`
+
+- `OK` = `0`
+- `NEXT` = `1`
+- `FAILED` = `2`
+- `NO_INFO` = `3`
+
+
 #### `wasi_errno_t`
 
 - `SUCCESS` = `0`
@@ -2189,6 +2229,7 @@ changes to unrelated connections/requests.
 [`proxy_peer_type_t`]: #proxy_peer_type_t
 [`proxy_stream_type_t`]: #proxy_stream_type_t
 [`proxy_metric_type_t`]: #proxy_metric_type_t
+[`proxy_last_upstream_state_t`]: #proxy_last_upstream_state
 
 [`wasi_errno_t`]: #wasi_errno_t
 [`wasi_fd_id_t`]: #wasi_fd_id_t

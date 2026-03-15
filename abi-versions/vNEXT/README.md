@@ -1142,7 +1142,6 @@ Plugin must return one of the following values:
 
 * params:
   - `i32 (uint32_t) stream_context_id`
-  - `i32 (`[`proxy_last_upstream_state`]`) last_state`
 * returns:
   - none
 
@@ -1155,19 +1154,29 @@ Can be called multiple times depending on whether the selected upstream
 could be reached, if it responded with a valid response and how many 
 attempts are allowed.
 
-Current state of processing and the expected action is represented using
-the `last_state` parameter:
-- `NO_INFO` - no upstream has been contacted yet, plugin can set a new upstream
-- `NEXT` - upstream responded with a valid response, but could not
-    provide the requested content, plugin can fetch information about the last
-    attempt and set a new upstream
-- `FAILED` - upstream could not be contacted or sent an invalid response,
-  plugin can fetch information about the last attempt and set a new upstream
-- `OK` - upstream sent a valid response, plugin can fetch information 
-about the last attempt
+Forwarding to another upstream can be aborted by calling `proxy_send_local_response`.
 
-Forwarding to another upstream can be aborted by calling `proxy_send_local_response` 
-unless `last_state` is `OK`, when response could already be sent downstream.
+
+#### `proxy_on_upstream_info`
+
+* params:
+  - `i32 (uint32_t) stream_context_id`
+  - `i32 (`[`proxy_last_upstream_state`]`) last_state`
+* returns:
+  - none
+
+Called each time the host finishes an attempt to get a response
+from an upstream.
+
+Serves for retrieving information about the last upstream attempt.
+
+The general state of the last attempt is provided by the `last_state`
+- `DECLINED` - upstream is alive and responded with a valid response, 
+but did not provide the requested content (403/404 status)
+- `FAILED` - upstream could not be contacted or sent an invalid response
+- `OK` - upstream sent a valid response
+
+During the callback only `proxy_get_last_upstream_*` hostcalls may be invoked.
 
 
 ### Functions exposed by the host
@@ -2136,9 +2145,8 @@ changes to unrelated connections/requests.
 #### `proxy_last_upstream_state_t`
 
 - `OK` = `0`
-- `NEXT` = `1`
+- `DECLINED` = `1`
 - `FAILED` = `2`
-- `NO_INFO` = `3`
 
 
 #### `wasi_errno_t`

@@ -528,6 +528,7 @@ in this section is restricted to specific callbacks:
 - `PLUGIN_CONFIGURATION` can be read in [`proxy_on_configure`].
 - `FOREIGN_FUNCTION_ARGUMENTS` can be read in
   [`proxy_on_foreign_function`].
+- `UPSTREAM_CONFIGURATION` can be read in [`proxy_on_configure`].
 
 
 ### Functions exposed by the host
@@ -631,6 +632,8 @@ functions in this section is restricted to specific callbacks:
   [`proxy_on_http_call_response`].
 - `HTTP_CALL_RESPONSE_TRAILERS` can be read in
   [`proxy_on_http_call_response`].
+- `HTTP_UPSTREAM_RESPONSE_HEADERS` can be read in
+  [`proxy_on_next_upstream`].
 
 
 ### Functions exposed by the host
@@ -1138,6 +1141,20 @@ Plugin must return one of the following values:
 - `PAUSE` to pause processing.
 
 
+#### Upstream callbacks
+
+The host may expose upstream servers configuration to the plugin using    
+[`proxy_get_buffer_bytes`] with `buffer_id` set to `UPSTREAM_CONFIGURATION`,
+which can be retrieved during [`proxy_on_configure`].
+
+> **Note**
+> The serialization format of the `UPSTREAM_CONFIGURATION` buffer is
+> host-defined, as different proxies support different server parameters.
+
+
+The following callbacks are invoked during upstream processing:
+
+
 #### `proxy_on_upstream_select`
 
 * params:
@@ -1157,6 +1174,29 @@ attempts are allowed.
 Forwarding to another upstream can be aborted by calling `proxy_send_local_response`.
 
 
+#### `proxy_on_next_upstream`
+
+* params:
+  - `i32 (uint32_t) stream_context_id`
+  - `i32 (uint32_t) status_code`
+* returns:
+  - none
+
+The host may invoke this callback when upstream responds with a special HTTP status
+code (status >= 300). 
+
+`status_code` is the HTTP status code of the upstream response.
+
+All upstream response headers can be retrieved using
+[`proxy_get_header_map_pairs`] with `map_id` set to `HTTP_UPSTREAM_RESPONSE_HEADERS`.
+
+Individual upstream response headers can be retrieved using
+[`proxy_get_header_map_value`] with `map_id` set to `HTTP_UPSTREAM_RESPONSE_HEADERS`.
+
+During this callback `proxy_accept_upstream_response` can be called to accept the 
+current response and forward it downstream.
+
+
 #### `proxy_on_upstream_info`
 
 * params:
@@ -1169,14 +1209,11 @@ Called each time the host finishes an attempt to get a response
 from an upstream.
 
 Serves for retrieving information about the last upstream attempt.
+Information can be retrieved by getting the `upstream.*` properties.
 
 The general state of the last attempt is provided by the `last_state`
-- `DECLINED` - upstream is alive and responded with a valid response, 
-but did not provide the requested content (403/404 status)
 - `FAILED` - upstream could not be contacted or sent an invalid response
 - `OK` - upstream sent a valid response
-
-During the callback only `proxy_get_last_upstream_*` hostcalls may be invoked.
 
 
 ### Functions exposed by the host
@@ -1221,7 +1258,7 @@ Returned `status` value is:
 Sets the upstream peer address for the current HTTP request.
 
 `address_data` must be a valid IPv4 or IPv6 address in text form
-(e.g. `192.168.1.1` or `[::1]`).
+(e.g. `192.168.1.1` or `::1`).
 
 This can be used only in `proxy_on_upstream_select`.
 
@@ -1232,6 +1269,65 @@ greater than `65535`, or an upstream was already set for this
 invocation of `proxy_on_upstream_select`.
 - `INVALID_MEMORY_ACCESS` when `address_data` or `address_size`
   point to invalid memory address.
+
+
+#### `proxy_accept_upstream_response`
+
+* params:
+- none
+* returns:
+  - `i32 (`[`proxy_status_t`]`) status`
+
+Accepts the last received upstream response and forwards it downstream.
+
+This can be used only in `proxy_on_next_upstream`.
+
+Returned `status` value is:
+- `OK` on success.
+
+
+#### `proxy_get_upstream_timeouts`
+
+* params:
+  - `i32 (uint32_t *) return_connect_timeout`
+  - `i32 (uint32_t *) return_send_timeout`
+  - `i32 (uint32_t *) return_read_timeout`
+* returns:
+  - `i32 (`[`proxy_status_t`]`) status`
+
+Retrieves currently set timeouts:
+- timeout for connecting to the upstream server (`return_connect_timeout`)
+- timeout for sending the request to the upstream server, between 
+successive write operations (`return_send_timeout`)
+- timeout for reading the response from the upstream server, between 
+successive read operations (`return_read_timeout`)
+
+This can be used only in `proxy_on_upstream_select`, 
+`proxy_on_next_upstream` or `proxy_on_upstream_info`.
+
+Returned `status` value is:
+- `OK` on success.
+- `INVALID_MEMORY_ACCESS` when `return_connect_timeout`, 
+  `return_send_timeout` or `return_read_timeout`
+  point to invalid memory address.
+
+
+#### `proxy_set_upstream_timeouts`
+
+* params:
+- `i32 (uint32_t) connect_timeout`
+- `i32 (uint32_t) send_timeout`
+- `i32 (uint32_t) read_timeout`
+* returns:
+  - `i32 (`[`proxy_status_t`]`) status`
+
+Sets timeouts for upstream proxying for the current HTTP request.
+To skip setting a certain timeout, value 0 is used.
+
+This can be used only in `proxy_on_upstream_select`.
+
+Returned `status` value is:
+- `OK` on success.
 
 
 ## HTTP calls
@@ -1854,8 +1950,14 @@ Returned `status` value is:
 
 #### Upstream connection properties
 
-* `upstream.address` (string) - remote address
-* `upstream.port` (int) - remote port
+* `upstream.address` (string) - remote address and port
+* `upstream.status` (int) - status code of the last upstream response
+* `upstream.connect_time` (uint) - time to establish a connection to the 
+  upstream server in milliseconds
+* `upstream.response_time` (uint) - time to receive a full response from
+  the upstream server in milliseconds
+* `upstream.header_time` (uint) - time to receive response headers from 
+  the upstream server in milliseconds
 * `upstream.local_address` (string) - local address
 * `upstream.local_port` (int) - local port
 * `upstream.tls_version` (string) - TLS version
@@ -2106,6 +2208,7 @@ changes to unrelated connections/requests.
 - `VM_CONFIGURATION` = `6`
 - `PLUGIN_CONFIGURATION` = `7`
 - `FOREIGN_FUNCTION_ARGUMENTS` = `8`
+- `UPSTREAM_CONFIGURATION` = `9`
 
 
 #### `proxy_map_type_t`
@@ -2118,6 +2221,7 @@ changes to unrelated connections/requests.
 - `GRPC_CALL_TRAILING_METADATA` = `5`
 - `HTTP_CALL_RESPONSE_HEADERS` = `6`
 - `HTTP_CALL_RESPONSE_TRAILERS` = `7`
+- `HTTP_UPSTREAM_RESPONSE_HEADERS` = `8`
 
 
 #### `proxy_peer_type_t`
@@ -2145,8 +2249,7 @@ changes to unrelated connections/requests.
 #### `proxy_last_upstream_state_t`
 
 - `OK` = `0`
-- `DECLINED` = `1`
-- `FAILED` = `2`
+- `FAILED` = `1`
 
 
 #### `wasi_errno_t`
@@ -2244,6 +2347,9 @@ changes to unrelated connections/requests.
 [`proxy_set_property`]: #proxy_set_property
 [`proxy_call_foreign_function`]: #proxy_call_foreign_function
 [`proxy_on_foreign_function`]: #proxy_on_foreign_function
+[`proxy_on_upstream_select`]: #proxy_on_upstream_select
+[`proxy_on_next_upstream`]: #proxy_on_next_upstream
+[`proxy_on_upstream_info`]: #proxy_on_upstream_info
 
 [`wasi_snapshot_preview1.fd_write`]: #wasi_snapshot_preview1.fd_write
 [`wasi_snapshot_preview1.clock_time_get`]: #wasi_snapshot_preview1.clock_time_get

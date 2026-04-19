@@ -1252,6 +1252,9 @@ Returned `status` value is:
   - `i32 (const char *) address_data`
   - `i32 (size_t) address_size`
   - `i32 (uint32_t) port`
+  - `i32 (uint32_t) tls`
+  - `i32 (const char *) sni_data`
+  - `i32 (size_t) sni_size`
 * returns:
   - `i32 (`[`proxy_status_t`]`) status`
 
@@ -1260,15 +1263,24 @@ Sets the upstream peer address for the current HTTP request.
 `address_data` must be a valid IPv4 or IPv6 address in text form
 (e.g. `192.168.1.1` or `::1`).
 
+`tls` selects the transport used for the upstream connection:
+- `0` — plain TCP (`http://`).
+- `1` — TLS (`https://`). 
+
+`sni_data` and `sni_size` describe the optional TLS Server Name
+Indication value sent during the TLS handshake. If `sni_size` is `0`,
+no plugin-provided SNI is set and the host's default SNI resolution
+applies. The SNI has no effect when `tls` is `0`.
+
 This can be used only in `proxy_on_upstream_select`.
 
 Returned `status` value is:
 - `OK` on success.
 - `BAD_ARGUMENT` when `address_data` is not a valid IP address, `port`
-greater than `65535`, or an upstream was already set for this
-invocation of `proxy_on_upstream_select`.
-- `INVALID_MEMORY_ACCESS` when `address_data` or `address_size`
-  point to invalid memory address.
+  greater than `65535`, `tls` is not `0` or `1`, or an upstream was
+  already set for this invocation of `proxy_on_upstream_select`.
+- `INVALID_MEMORY_ACCESS` when `address_data`, `address_size`,
+  `sni_data` or `sni_size` point to invalid memory address.
 
 
 #### `proxy_accept_upstream_response`
